@@ -1,0 +1,26 @@
+#######################################
+# Syntax Coloring Map for KickFiltersRT
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+KickFiltersRT	KEYWORD1
+
+
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+highpass	KEYWORD2
+lowpass	KEYWORD2
+inithighpass	KEYWORD2
+initlowpass	KEYWORD2
+
+
+
+#######################################
+# Constants (LITERAL1)
+#######################################
