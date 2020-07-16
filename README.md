@@ -1,5 +1,6 @@
 # KickFiltersRT
 A library for implementing a few basic real-time filters including: high-pass and low-pass filters.
+Specifically written for Arduino, but can be ported to other microcontrollers.
 
 
 Partially used in Linnes Lab's Kick LL smartwatch, a research device for measuring heart rate, respiration, and blood oxygen.
