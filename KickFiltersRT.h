@@ -2,7 +2,7 @@
  FILENAME:	KickFiltersRT.h
  AUTHOR:	Orlando S. Hoilett
  CONTACT:	orlandohoilett@gmail.com
- VERSION:	1.0.0
+ VERSION:	1.1.0
  
  
  AFFILIATIONS
@@ -24,6 +24,11 @@
  2020/07/11:0723> (UTC-5)
  			- Moved to templated class.
  			- Updated comments.
+ 2020/07/19:1022> (UTC-5)
+ 			- Added moving average filter.
+ 2020/07/20:0530> (UTC-5)
+ 			- Fixed array indexing in movingAverage function to reset array
+			position on wrap around.
  
  
  FUTURE UPDATES TO INCLUDE
@@ -70,6 +75,8 @@
 #include <Arduino.h>
 
 
+const uint8_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 25;
+
 template<typename Type>
 
 
@@ -78,34 +85,45 @@ class KickFiltersRT
 	
 private:
 	
+	//Highpass Filter
 	Type prevHPInput;
 	Type prevHPOutput;
 	float alpha_HP;
 	
+	//Lowpass Filter
 	Type prevLPOutput;
 	float alpha_LP;
 	
+	//Bandpass Filter
 	Type prevBPOutput;
 	Type prevBPInput;
 	float alpha_HP_BP;
 	float alpha_LP_BP;
 	
+	//Moving Average Filter
+	uint8_t pos;
+	Type arr[KickFiltersRT_MAX_MOVING_AVERAGE_ORDER];
+	uint8_t order;
+	
 	
 public:
 
+	//DEFAULT CONSTRUCTOR
 	KickFiltersRT();
 	
-	
+	//Highpass Filter
 	Type highpass(const Type input, float fc, uint16_t dt);
 	Type highpass(const Type input);
 	void inithighpass(const Type input0, float fc, uint16_t dt);
 	
+	//Lowpass Filter
 	Type lowpass(const Type input, float fc, uint16_t dt);
 	Type lowpass(const Type input);
 	void initlowpass(const Type input0, float fc, uint16_t dt);
 
-	
-	//void movingAverage(const int16_t input[], int16_t output[], uint16_t samples, uint16_t order);
+	//Moving Average Filter
+	void initmovingAverage(const Type input, uint8_t samples);
+	Type movingAverage(const Type input);
 
 
 //	bandpass();
@@ -302,33 +320,44 @@ void KickFiltersRT<Type>::initlowpass(const Type input0, float fc, uint16_t dt)
 //}
 
 
-
-//void KickFiltersRT::movingAverage(const int16_t input[], int16_t output[], uint16_t samples, uint16_t order)
+//void KickFiltersRT::initmovingAverage(const Type input, uint16_t samples)
 //input			data array...declared as const so it's read-only
-//output		result of filter gets stored in this array. Not declared as
-//					const so it is eligible for both read and write
-//samples		number of samples in array
-//order			filter order...how many samples should be averaged
+//samples		order of the filter (how many samples should be averaged together)
 //
-//Implements a simple moving average filter. Implemented such that the last few
-//outputs of the filter (equal to the order of the filter) are not usable.
-//void KickFiltersRT::movingAverage(const int16_t input[], int16_t output[], uint16_t samples, uint16_t order)
-//{
-//	float sum = 0;
-//
-//	for(uint16_t i = 0; i < samples-order; i++)
-//	{
-//		sum = 0;
-//		for(uint16_t j = i; j < i+order; j++)
-//		{
-//			sum += input[j];
-//		}
-//
-//		output[i] = (int16_t)(sum / order);
-//	}
-//}
+//Implements a simple moving average filter.
+template<typename Type>
+void KickFiltersRT<Type>::initmovingAverage(const Type input, uint8_t samples)
+{
+	pos = 0; //sets current position to 0 since we're initializing filter
+	arr[pos] = input; //sets first value of array "input" parameter
+	for(uint8_t i = 1; i < order; i++) arr[i] = 0; //explicity sets other array values to 0
+	
+	//ensures filter order doesn't exceed size of compiled data array
+	if(samples > KickFiltersRT_MAX_MOVING_AVERAGE_ORDER) order = KickFiltersRT_MAX_MOVING_AVERAGE_ORDER;
+	else order = samples;
+}
 
 
+//Type KickFiltersRT::movingAverage(const Type input)
+//input			data array...declared as const so it's read-only
+//
+//Implements a simple moving average filter.
+template<typename Type>
+Type KickFiltersRT<Type>::movingAverage(const Type input)
+{
+	if(order == 0) return 0;
+	
+	Type sum = 0;
+	//Do not increment pos here since pos was incremented on the previous function call
+	arr[pos] = input;
+	for(uint8_t i = 0; i < order; i++) sum += arr[i];
+	
+	//increments pos variable and wraps around when
+	//we get to the length-1 of arr, the data arr
+	if(++pos > order) pos = 0;
+	
+	return sum/order;
+}
 
 
 

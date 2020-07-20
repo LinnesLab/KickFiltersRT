@@ -14,13 +14,21 @@ KickFiltersRT	KEYWORD1
 # Methods and Functions (KEYWORD2)
 #######################################
 
-highpass	KEYWORD2
-lowpass	KEYWORD2
 inithighpass	KEYWORD2
+highpass	KEYWORD2
+
 initlowpass	KEYWORD2
+lowpass	KEYWORD2
+
+initmovingAverage	KEYWORD2
+movingAverage	KEYWORD2
 
 
 
 #######################################
 # Constants (LITERAL1)
 #######################################
+
+
+KickFiltersRT_MAX_MOVING_AVERAGE_ORDER	LITERAL1
+
