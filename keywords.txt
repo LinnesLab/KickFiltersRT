@@ -23,6 +23,9 @@ lowpass	KEYWORD2
 initmovingAverage	KEYWORD2
 movingAverage	KEYWORD2
 
+initnotch	KEYWORD2
+notch	KEYWORD2
+
 
 
 #######################################

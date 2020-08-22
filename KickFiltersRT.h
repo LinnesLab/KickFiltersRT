@@ -1,8 +1,8 @@
 /*
  FILENAME:	KickFiltersRT.h
- AUTHOR:	Orlando S. Hoilett
+ AUTHOR:	Orlando S. Hoilett and Benjamin D. Walters
  CONTACT:	orlandohoilett@gmail.com
- VERSION:	1.1.0
+ VERSION:	1.2.0
  
  
  AFFILIATIONS
@@ -29,6 +29,9 @@
  2020/07/20:0530> (UTC-5)
  			- Fixed array indexing in movingAverage function to reset array
 			position on wrap around.
+ Version 1.2.0
+ 2020/08/21:1558> (UTC-5)
+ 			- Added a notch filter.
  
  
  FUTURE UPDATES TO INCLUDE
@@ -77,6 +80,7 @@
 
 const uint8_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 25;
 
+
 template<typename Type>
 
 
@@ -105,6 +109,17 @@ private:
 	Type arr[KickFiltersRT_MAX_MOVING_AVERAGE_ORDER];
 	uint8_t order;
 	
+	// Notch filter parameters & constants
+	float r;
+	float b0;
+	float b1; //{Equation: -2.0*cos(2*PI*fc/float(fs));}
+	float b2;
+	float a1; //{Equation: 2*r*cos(2*PI*fc/float(fs));}
+	float a2;//{Equation: -1.0 * pow(r,2);}
+	
+	float bs_filter[2]; //stores previous filter outputs
+	Type prevNotchInput[2]; //stores previous filter inputs
+	
 	
 public:
 
@@ -124,10 +139,11 @@ public:
 	//Moving Average Filter
 	void initmovingAverage(const Type input, uint8_t samples);
 	Type movingAverage(const Type input);
-
-
-//	bandpass();
-//	notch();
+	
+	//Notch Filter
+	void initnotch(const Type input0, const Type input1, float fc, float fs);
+	void initnotch(const Type input0, const Type input1, float fc, float fs, float r_coeff);
+	float notch(const Type input);
 	
 };
 
@@ -149,6 +165,138 @@ KickFiltersRT<Type>::KickFiltersRT()
 	prevBPInput = 0;
 	alpha_HP_BP = 0;
 	alpha_LP_BP = 0;
+	
+	r = 0;
+	b0 = 0;
+	b1 = 0; //{Equation: -2.0*cos(2*PI*fc/float(fs));}
+	b2 = 0;
+	a1 = 0; //{Equation: 2*r*cos(2*PI*fc/float(fs));}
+	a2 = 0;//{Equation: -1.0 * pow(r,2);}
+	
+	bs_filter[0] = 0;
+	bs_filter[1] = 0;
+	prevNotchInput[0] = 0;
+	prevNotchInput[1] = 0;
+}
+
+
+//void KickFiltersRT<Type>::initnotch(const Type input0, const Type input1, float fc, float fs)
+//return		output of the filter
+//
+//input0		input data
+//input1		input data
+//fc			desired center frequency of the notch filter (the frequency to
+//					be filtered
+//fs			sampling frequency (Hz) of signal being filtered
+//
+//Implements a simple notch filter. Adapted from Wang and Xiao - 2013 - Second-Order
+//IIR Notch Filter Design and Implementation of Digital Signal Processing System.
+//Ppaer is also stored in extras folder.
+template<typename Type>
+void KickFiltersRT<Type>::initnotch(const Type input0, const Type input1, float fc, float fs)
+{
+	// Notch filter parameters & constants
+	//Values calculated manually for increased precision
+	r = 0.8;
+	b0 = 1;
+	b1 = -2*cos(2*PI*fc/fs); //{Equation: -2.0*cos(2*PI*fc/float(fs));}
+	b2 = 1;
+	a1 = 2*r*cos(2*PI*fc/fs); //{Equation: 2*r*cos(2*PI*fc/float(fs));}
+	a2 = -(r*r); //{Equation: -1.0 * pow(r,2);}
+	
+	
+	//calculate filter output
+	float bs_Val = input0 + (b1 * 0) + (b2 * 0) + (a1 * bs_filter[1]) + (a2 * bs_filter[0]);
+	//update filter output values
+	bs_filter[0] = 0;
+	bs_filter[1] = bs_Val;
+	
+	
+	//calculate filter output
+	bs_Val = input1 + (b1 * input0) + (b2 * 0) + (a1 * bs_filter[1]) + (a2 * bs_filter[0]);
+	//update filter output values
+	bs_filter[0] = bs_filter[1];
+	bs_filter[1] = bs_Val;
+	
+	
+	//update old input values
+	prevNotchInput[0] = input0;
+	prevNotchInput[1] = input1;
+}
+
+
+//void KickFiltersRT<Type>::initnotch(const Type input0, const Type input1, float fc, float fs, float r_coeff)
+//return		output of the filter
+//
+//input0		input data
+//input1		input data
+//fc			desired center frequency of the notch filter (the frequency to
+//					be filtered
+//fs			sampling frequency (Hz) of signal being filtered
+//r_coeff		controls filter bandwith (wideness and steepness of the notch)
+//					0.8 appears be most ideal, but the user may experiment
+//					with the value if they so choose
+//
+//Implements a simple notch filter. Adapted from Wang and Xiao - 2013 - Second-Order
+//IIR Notch Filter Design and Implementation of Digital Signal Processing System.
+//Ppaer is also stored in extras folder.
+template<typename Type>
+void KickFiltersRT<Type>::initnotch(const Type input0, const Type input1, float fc, float fs, float r_coeff)
+{
+	// Notch filter parameters & constants
+	//Values calculated manually for increased precision
+	r = r_coeff;
+	b0 = 1;
+	b1 = -2*cos(2*PI*fc/fs); //{Equation: -2.0*cos(2*PI*fc/float(fs));}
+	b2 = 1;
+	a1 = 2*r*cos(2*PI*fc/fs); //{Equation: 2*r*cos(2*PI*fc/float(fs));}
+	a2 = -(r*r); //{Equation: -1.0 * pow(r,2);}
+	
+	
+	//calculate filter output
+	float bs_Val = input0 + (b1 * 0) + (b2 * 0) + (a1 * bs_filter[1]) + (a2 * bs_filter[0]);
+	//update filter output values
+	bs_filter[0] = 0;
+	bs_filter[1] = bs_Val;
+	
+	
+	//calculate filter output
+	bs_Val = input1 + (b1 * input0) + (b2 * 0) + (a1 * bs_filter[1]) + (a2 * bs_filter[0]);
+	//update filter output values
+	bs_filter[0] = bs_filter[1];
+	bs_filter[1] = bs_Val;
+	
+	
+	//update old input values
+	prevNotchInput[0] = input0;
+	prevNotchInput[1] = input1;
+}
+
+
+//float KickFiltersRT<Type>::notch(const Type input)
+//return		output of the filter
+//
+//input			input data
+//
+//Implements a simple notch filter. Adapted from Wang and Xiao - 2013 - Second-Order
+//IIR Notch Filter Design and Implementation of Digital Signal Processing System.
+//Reference also stored in extras folder
+template<typename Type>
+float KickFiltersRT<Type>::notch(const Type input)
+{
+	//calculate filter output
+	float bs_Val = input + (b1 * prevNotchInput[1]) + (b2 * prevNotchInput[0]) + (a1 * bs_filter[1]) + (a2 * bs_filter[0]);
+	
+	//update filter output values
+	bs_filter[0] = bs_filter[1];
+	bs_filter[1] = bs_Val;
+	
+	//update old input values
+	prevNotchInput[0] = prevNotchInput[1];
+	prevNotchInput[1] = input;
+	
+	//return filter output
+	return bs_Val;
 }
 
 
@@ -348,7 +496,7 @@ Type KickFiltersRT<Type>::movingAverage(const Type input)
 	if(order == 0) return 0;
 	
 	Type sum = 0;
-	//Do not increment pos here since pos was incremented on the previous function call
+	//Do not increment pos here since pos will be incremented later in this method
 	arr[pos] = input;
 	for(uint8_t i = 0; i < order; i++) sum += arr[i];
 	
