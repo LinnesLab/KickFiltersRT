@@ -26,6 +26,9 @@ movingAverage	KEYWORD2
 initnotch	KEYWORD2
 notch	KEYWORD2
 
+initmedian	KEYWORD2
+median	KEYWORD2
+
 
 
 #######################################

@@ -2,7 +2,7 @@
  FILENAME:	KickFiltersRT.h
  AUTHOR:	Orlando S. Hoilett and Benjamin D. Walters
  CONTACT:	orlandohoilett@gmail.com
- VERSION:	1.2.0
+ VERSION:	1.3.0
  
  
  AFFILIATIONS
@@ -32,6 +32,9 @@
  Version 1.2.0
  2020/08/21:1558> (UTC-5)
  			- Added a notch filter.
+ Version 1.3.0
+ 2020/08/22:1743> (UTC-5)
+ 			- Added a median filter.
  
  
  FUTURE UPDATES TO INCLUDE
@@ -77,8 +80,12 @@
 //Standard Arduino libraries
 #include <Arduino.h>
 
+//Kick LL Libraries
+#include "KickMath.h"
 
-const uint8_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 25;
+
+const uint16_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 50;
+const uint16_t KickFiltersRT_MAX_MEDIAN_FILTER_ORDER = 50;
 
 
 template<typename Type>
@@ -121,6 +128,13 @@ private:
 	Type prevNotchInput[2]; //stores previous filter inputs
 	
 	
+	//Median Filter
+	uint16_t posMedian;
+	Type arrMedian[KickFiltersRT_MAX_MEDIAN_FILTER_ORDER];
+	Type tmpArrMedian[KickFiltersRT_MAX_MEDIAN_FILTER_ORDER];
+	uint16_t orderMedian;
+	
+	
 public:
 
 	//DEFAULT CONSTRUCTOR
@@ -144,6 +158,11 @@ public:
 	void initnotch(const Type input0, const Type input1, float fc, float fs);
 	void initnotch(const Type input0, const Type input1, float fc, float fs, float r_coeff);
 	float notch(const Type input);
+	
+	//Median Filter
+	void initmedian(const uint16_t filter_order);
+	Type median(const Type input);
+	Type median(const Type input, const uint16_t filter_order);
 	
 };
 
@@ -177,6 +196,18 @@ KickFiltersRT<Type>::KickFiltersRT()
 	bs_filter[1] = 0;
 	prevNotchInput[0] = 0;
 	prevNotchInput[1] = 0;
+	
+	
+	//Median Filter
+	posMedian = 0;
+	orderMedian = 0;
+	
+	//explicity sets array values to 0 to avoid undefined values
+	for(uint16_t i = 0; i < KickFiltersRT_MAX_MEDIAN_FILTER_ORDER; i++)
+	{
+		arrMedian[i] = 0;
+		tmpArrMedian[i] = 0;
+	}
 }
 
 
@@ -476,13 +507,14 @@ void KickFiltersRT<Type>::initlowpass(const Type input0, float fc, uint16_t dt)
 template<typename Type>
 void KickFiltersRT<Type>::initmovingAverage(const Type input, uint8_t samples)
 {
-	pos = 0; //sets current position to 0 since we're initializing filter
-	arr[pos] = input; //sets first value of array "input" parameter
-	for(uint8_t i = 1; i < order; i++) arr[i] = 0; //explicity sets other array values to 0
-	
 	//ensures filter order doesn't exceed size of compiled data array
 	if(samples > KickFiltersRT_MAX_MOVING_AVERAGE_ORDER) order = KickFiltersRT_MAX_MOVING_AVERAGE_ORDER;
 	else order = samples;
+	
+	
+	pos = 0; //sets current position to 0 since we're initializing filter
+	arr[pos] = input; //sets first value of array "input" parameter
+	for(uint8_t i = 1; i < order; i++) arr[i] = 0; //explicity sets other array values to 0
 }
 
 
@@ -505,6 +537,51 @@ Type KickFiltersRT<Type>::movingAverage(const Type input)
 	if(++pos > order) pos = 0;
 	
 	return sum/order;
+}
+
+
+//Median Filter
+template<typename Type>
+void KickFiltersRT<Type>::initmedian(const uint16_t filter_order)
+{
+	//ensures filter order doesn't exceed size of compiled data array
+	if(filter_order > KickFiltersRT_MAX_MEDIAN_FILTER_ORDER) orderMedian = KickFiltersRT_MAX_MEDIAN_FILTER_ORDER;
+	else orderMedian = filter_order;
+	
+	
+	//explicity sets array values to 0 to avoid undefined values
+	posMedian = 0;
+	for(uint16_t i = 0; i < KickFiltersRT_MAX_MEDIAN_FILTER_ORDER; i++)
+	{
+		arrMedian[i] = 0;
+		tmpArrMedian[i] = 0;
+	}
+}
+
+
+template<typename Type>
+Type KickFiltersRT<Type>::median(const Type input)
+{
+	arrMedian[posMedian] = input;
+	if(++posMedian > orderMedian-1) posMedian = 0;
+
+	
+	return KickMath<Type>::calcMedian(orderMedian, arrMedian, tmpArrMedian);
+}
+
+
+template<typename Type>
+Type KickFiltersRT<Type>::median(const Type input, const uint16_t filter_order)
+{
+	if(filter_order > KickFiltersRT_MAX_MEDIAN_FILTER_ORDER) orderMedian = KickFiltersRT_MAX_MEDIAN_FILTER_ORDER;
+	else orderMedian = filter_order;
+
+	
+	arrMedian[posMedian] = input;
+	if(++posMedian > orderMedian-1) posMedian = 0;
+	
+	
+	return KickMath<Type>::calcMedian(orderMedian, arrMedian, tmpArrMedian);
 }
 
 
