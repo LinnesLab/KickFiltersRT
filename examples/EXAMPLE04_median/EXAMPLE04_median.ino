@@ -21,14 +21,8 @@
  * 
  * UPDATES
  * Version 1.0.0
- * 2020/05/21:1547>
- *           - Reimplemented previous example with data moved
- *           to KickExampleData class.
- * Version 2.0.0
- * 2020/06/25:1339>
- *           - Updated to reflect templated class
- * 2020/07/16:0815>
- *           - Updated comments a bit.
+ * 2020/08/22:2104>
+ *           - initilized
  * 
  * 
  * DISCLAIMER
@@ -79,14 +73,16 @@ void setup()
   Serial.begin(9600);
   while(!Serial); //will not run until Serial Monitor or Plotter is open
 
-  filtersRT.initmedian(3);
 
-  
+  filtersRT.initmedian(3);
   //Print to Serial Plotter to display
   for(uint16_t i = 0; i < samples; i++)
   {
     Serial.print(input[i]);
     Serial.print(",");
+    
+    //add 400 to offset signal, making it
+    //easier to view in the Serial Plotter
     Serial.print(400+filtersRT.median(input[i]));
     Serial.println();
 
