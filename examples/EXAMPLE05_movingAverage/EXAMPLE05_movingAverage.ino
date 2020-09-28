@@ -23,6 +23,8 @@
  * Version 1.0.0
  * 2020/08/22:2104>
  *           - initilized
+ * 2020/09/28:1029>
+ *           - added comment on the order of the moving average filter
  * 
  * 
  * DISCLAIMER
@@ -74,7 +76,7 @@ void setup()
   while(!Serial); //will not run until Serial Monitor or Plotter is open
   
 
-  filtersRT.initmovingAverage(4);
+  filtersRT.initmovingAverage(4); //moving average of 4 samples
   //Print to Serial Plotter to display
   for(uint16_t i = 0; i < samples; i++)
   {

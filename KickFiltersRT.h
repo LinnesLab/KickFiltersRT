@@ -39,6 +39,9 @@
 			rely on prior and present samples and not future samples)
  2020/09/10:2116> (UTC-5)
  			- changed dt to fs in lowpass and highpass filter functions
+ 2020/09/28:1030> (UTC-5)
+			- change max order of median and moving average filter to 20 to fit
+			smaller processors. Users can increase that number as they need to.
  
  
  FUTURE UPDATES TO INCLUDE
@@ -88,8 +91,8 @@
 #include "KickMath.h"
 
 
-const uint16_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 25;
-const uint16_t KickFiltersRT_MAX_MEDIAN_FILTER_ORDER = 25;
+const uint16_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 20;
+const uint16_t KickFiltersRT_MAX_MEDIAN_FILTER_ORDER = 20;
 
 
 template<typename Type>
