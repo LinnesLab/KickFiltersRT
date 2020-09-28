@@ -2,7 +2,7 @@
  FILENAME:	KickFiltersRT.h
  AUTHOR:	Orlando S. Hoilett and Benjamin D. Walters
  CONTACT:	orlandohoilett@gmail.com
- VERSION:	1.2.0
+ VERSION:	2.0.0
  
  
  AFFILIATIONS
@@ -32,6 +32,16 @@
  Version 1.2.0
  2020/08/21:1558> (UTC-5)
  			- Added a notch filter.
+ Version 2.0.0
+ 2020/08/22:1743> (UTC-5)
+ 			- Added a median filter (causal filter).
+ 			- modified moving average filter implementation to be causal (to
+			rely on prior and present samples and not future samples)
+ 2020/09/10:2116> (UTC-5)
+ 			- changed dt to fs in lowpass and highpass filter functions
+ 2020/09/28:1030> (UTC-5)
+			- change max order of median and moving average filter to 20 to fit
+			smaller processors. Users can increase that number as they need to.
  
  
  FUTURE UPDATES TO INCLUDE
@@ -77,8 +87,12 @@
 //Standard Arduino libraries
 #include <Arduino.h>
 
+//Kick LL Libraries
+#include "KickMath.h"
 
-const uint8_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 25;
+
+const uint16_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 20;
+const uint16_t KickFiltersRT_MAX_MEDIAN_FILTER_ORDER = 20;
 
 
 template<typename Type>
@@ -104,10 +118,12 @@ private:
 	float alpha_HP_BP;
 	float alpha_LP_BP;
 	
+	
 	//Moving Average Filter
-	uint8_t pos;
-	Type arr[KickFiltersRT_MAX_MOVING_AVERAGE_ORDER];
-	uint8_t order;
+	uint16_t posMovingAverage;
+	Type arrMovingAverage[KickFiltersRT_MAX_MOVING_AVERAGE_ORDER];
+	uint16_t orderMovingAverage;
+	
 	
 	// Notch filter parameters & constants
 	float r;
@@ -121,29 +137,41 @@ private:
 	Type prevNotchInput[2]; //stores previous filter inputs
 	
 	
+	//Median Filter
+	uint16_t posMedian;
+	Type arrMedian[KickFiltersRT_MAX_MEDIAN_FILTER_ORDER];
+	Type tmpArrMedian[KickFiltersRT_MAX_MEDIAN_FILTER_ORDER];
+	uint16_t orderMedian;
+	
+	
 public:
 
 	//DEFAULT CONSTRUCTOR
 	KickFiltersRT();
 	
 	//Highpass Filter
-	Type highpass(const Type input, float fc, uint16_t dt);
+	Type highpass(const Type input, float fc, float fs);
 	Type highpass(const Type input);
-	void inithighpass(const Type input0, float fc, uint16_t dt);
+	void inithighpass(const Type input0, float fc, float fs);
 	
 	//Lowpass Filter
-	Type lowpass(const Type input, float fc, uint16_t dt);
+	Type lowpass(const Type input, float fc, float fs);
 	Type lowpass(const Type input);
-	void initlowpass(const Type input0, float fc, uint16_t dt);
+	void initlowpass(const Type input0, float fc, float fs);
 
 	//Moving Average Filter
-	void initmovingAverage(const Type input, uint8_t samples);
+	void initmovingAverage(uint16_t filter_order);
 	Type movingAverage(const Type input);
 	
 	//Notch Filter
 	void initnotch(const Type input0, const Type input1, float fc, float fs);
 	void initnotch(const Type input0, const Type input1, float fc, float fs, float r_coeff);
 	float notch(const Type input);
+	
+	//Median Filter
+	void initmedian(const uint16_t filter_order);
+	Type median(const Type input);
+	Type median(const Type input, const uint16_t filter_order);
 	
 };
 
@@ -154,18 +182,34 @@ public:
 template<typename Type>
 KickFiltersRT<Type>::KickFiltersRT()
 {
+	//High Pass Filter
 	prevHPInput = 0;
 	prevHPOutput = 0;
 	alpha_HP = 0;
 	
+	//Low Pass Filter
 	prevLPOutput = 0;
 	alpha_LP = 0;
 	
+	//Bandpass Filter
 	prevBPOutput = 0;
 	prevBPInput = 0;
 	alpha_HP_BP = 0;
 	alpha_LP_BP = 0;
 	
+
+	//Moving Average Filter
+	posMovingAverage = 0;
+	orderMovingAverage = 0;
+	
+	//explicity sets array values to 0 to avoid undefined values
+	for(uint16_t i = 0; i < KickFiltersRT_MAX_MOVING_AVERAGE_ORDER; i++)
+	{
+		arrMovingAverage[i] = 0;
+	}
+	
+	
+	//Notch Filter
 	r = 0;
 	b0 = 0;
 	b1 = 0; //{Equation: -2.0*cos(2*PI*fc/float(fs));}
@@ -177,6 +221,18 @@ KickFiltersRT<Type>::KickFiltersRT()
 	bs_filter[1] = 0;
 	prevNotchInput[0] = 0;
 	prevNotchInput[1] = 0;
+	
+	
+	//Median Filter
+	posMedian = 0;
+	orderMedian = 0;
+
+	//explicity sets array values to 0 to avoid undefined values
+	for(uint16_t i = 0; i < KickFiltersRT_MAX_MEDIAN_FILTER_ORDER; i++)
+	{
+		arrMedian[i] = 0;
+		tmpArrMedian[i] = 0;
+	}
 }
 
 
@@ -305,18 +361,18 @@ float KickFiltersRT<Type>::notch(const Type input)
 //
 //input			input data
 //fc			desired cut-off frequency of the filter (in Hertz)
-//dt			sampling period (ms)...time between samples in milliseconds
+//fs			sampling frequency (time in between samples) in Hertz (Hz)
 //
 //Implements a simple first-order high pass filter according to the algorithm
 //here: https://en.wikipedia.org/wiki/High-pass_filter
 //The Wikipedia article is also located in the library in the "extras/references/" folder.
 template<typename Type>
-Type KickFiltersRT<Type>::highpass(const Type input, float fc, uint16_t dt)
+Type KickFiltersRT<Type>::highpass(const Type input, float fc, float fs)
 {
 	//Tau = Resistance(R)*Capacitance(C)
 	//re-arranging the cut-off frequency equaion [1/(2*pi*R*C)] to solve for R*C
 	float tau = 1/(2.0*PI*fc);
-	alpha_HP = tau / (tau + (dt/1000.0));
+	alpha_HP = tau / (tau + (1/fs));
 	
 	//filtering function
 	Type output = alpha_HP*(prevHPOutput + input - prevHPInput);
@@ -358,7 +414,7 @@ Type KickFiltersRT<Type>::highpass(const Type input)
 //
 //input0		First value of input data. Feel free to set to 0.
 //fc			desired cut-off frequency of the filter (in Hertz)
-//dt			sampling period (ms)...time between samples in milliseconds
+//fs			sampling frequency (time in between samples) in Hertz (Hz)
 //
 //Initializes filter by defining necessary variables.
 //
@@ -366,12 +422,12 @@ Type KickFiltersRT<Type>::highpass(const Type input)
 //here: https://en.wikipedia.org/wiki/High-pass_filter
 //The Wikipedia article is also located in the library in the "extras/references/" folder.
 template<typename Type>
-void KickFiltersRT<Type>::inithighpass(const Type input0, float fc, uint16_t dt)
+void KickFiltersRT<Type>::inithighpass(const Type input0, float fc, float fs)
 {
 	//Tau = Resistance(R)*Capacitance(C)
 	//re-arranging the cut-off frequency equaion [1/(2*pi*R*C)] to solve for R*C
 	float tau = 1/(2.0*PI*fc);
-	alpha_HP = tau / (tau + (dt/1000.0));
+	alpha_HP = tau / (tau + (1/fs));
 	
 	
 	//setting member variables for the next time the filter is called
@@ -385,18 +441,18 @@ void KickFiltersRT<Type>::inithighpass(const Type input0, float fc, uint16_t dt)
 //
 //input			input data
 //fc			desired cut-off frequency of the filter (in Hertz)
-//dt			sampling period (ms)...time between samples in milliseconds
+//fs			sampling frequency (time between samples) in Hertz (Hz)
 //
 //Implements a simple first-order low pass filter according to the algorithm
 //here: https://en.wikipedia.org/wiki/Low-pass_filter
 //The Wikipedia article is also located in the library in the "extras/references/" folder.
 template<typename Type>
-Type KickFiltersRT<Type>::lowpass(const Type input, float fc, uint16_t dt)
+Type KickFiltersRT<Type>::lowpass(const Type input, float fc, float fs)
 {
 	//Tau = Resistance*Capacitance
 	//re-arranging the cut-off frequency equaion [1/(2*pi*R*C)] to solve for R*C
 	float tau = 1/(2.0*PI*fc);
-	alpha_LP = (dt/1000.0) / (tau + (dt/1000.0));
+	alpha_LP = (1/fs) / (tau + (1/fs));
 	
 	//filtering function
 	Type output = prevLPOutput + alpha_LP*(input - prevLPOutput);
@@ -436,7 +492,7 @@ Type KickFiltersRT<Type>::lowpass(const Type input)
 //
 //input0		First value of input data. Feel free to set to 0.
 //fc			desired cut-off frequency of the filter (in Hertz)
-//dt			sampling period (ms)...time between samples in milliseconds
+//fs			sampling frequency (time between samples) in Hertz (Hz)
 //
 //Initializes filter by defining necessary variables.
 //
@@ -444,12 +500,12 @@ Type KickFiltersRT<Type>::lowpass(const Type input)
 //here: https://en.wikipedia.org/wiki/Low-pass_filter
 //The Wikipedia article is also located in the library in the "extras/references/" folder.
 template<typename Type>
-void KickFiltersRT<Type>::initlowpass(const Type input0, float fc, uint16_t dt)
+void KickFiltersRT<Type>::initlowpass(const Type input0, float fc, float fs)
 {
 	//Tau = Resistance*Capacitance
 	//re-arranging the cut-off frequency equaion [1/(2*pi*R*C)] to solve for R*C
 	float tau = 1/(2.0*PI*fc);
-	alpha_LP = (dt/1000.0) / (tau + (dt/1000.0));
+	alpha_LP = (1/fs) / (tau + (1/fs));
 	
 	
 	//setting member variables for the next time the filter is called
@@ -474,15 +530,19 @@ void KickFiltersRT<Type>::initlowpass(const Type input0, float fc, uint16_t dt)
 //
 //Implements a simple moving average filter.
 template<typename Type>
-void KickFiltersRT<Type>::initmovingAverage(const Type input, uint8_t samples)
+void KickFiltersRT<Type>::initmovingAverage(uint16_t filter_order)
 {
-	pos = 0; //sets current position to 0 since we're initializing filter
-	arr[pos] = input; //sets first value of array "input" parameter
-	for(uint8_t i = 1; i < order; i++) arr[i] = 0; //explicity sets other array values to 0
-	
 	//ensures filter order doesn't exceed size of compiled data array
-	if(samples > KickFiltersRT_MAX_MOVING_AVERAGE_ORDER) order = KickFiltersRT_MAX_MOVING_AVERAGE_ORDER;
-	else order = samples;
+	if(filter_order > KickFiltersRT_MAX_MOVING_AVERAGE_ORDER) orderMovingAverage = KickFiltersRT_MAX_MOVING_AVERAGE_ORDER;
+	else orderMovingAverage = filter_order;
+	
+	
+	//explicity sets array values to 0 to avoid undefined values
+	posMovingAverage = 0;
+	for(uint16_t i = 0; i < KickFiltersRT_MAX_MOVING_AVERAGE_ORDER; i++)
+	{
+		arrMovingAverage[i] = 0;
+	}
 }
 
 
@@ -493,18 +553,66 @@ void KickFiltersRT<Type>::initmovingAverage(const Type input, uint8_t samples)
 template<typename Type>
 Type KickFiltersRT<Type>::movingAverage(const Type input)
 {
-	if(order == 0) return 0;
+	//check that filter is initialized
+	if(orderMovingAverage == 0) return 0;
 	
+	//add new value
+	arrMovingAverage[posMovingAverage] = input;
+	if(++posMovingAverage > orderMovingAverage-1) posMovingAverage = 0;
+	
+	
+	//add up values in array
 	Type sum = 0;
-	//Do not increment pos here since pos will be incremented later in this method
-	arr[pos] = input;
-	for(uint8_t i = 0; i < order; i++) sum += arr[i];
+	for(uint16_t i = 0; i < orderMovingAverage; i++) sum += arrMovingAverage[i];
 	
-	//increments pos variable and wraps around when
-	//we get to the length-1 of arr, the data arr
-	if(++pos > order) pos = 0;
 	
-	return sum/order;
+	//calculate and return the average value
+	return sum/orderMovingAverage;
+}
+
+
+//Median Filter
+template<typename Type>
+void KickFiltersRT<Type>::initmedian(const uint16_t filter_order)
+{
+	//ensures filter order doesn't exceed size of compiled data array
+	if(filter_order > KickFiltersRT_MAX_MEDIAN_FILTER_ORDER) orderMedian = KickFiltersRT_MAX_MEDIAN_FILTER_ORDER;
+	else orderMedian = filter_order;
+	
+	
+	//explicity sets array values to 0 to avoid undefined values
+	posMedian = 0;
+	for(uint16_t i = 0; i < KickFiltersRT_MAX_MEDIAN_FILTER_ORDER; i++)
+	{
+		arrMedian[i] = 0;
+		tmpArrMedian[i] = 0;
+	}
+}
+
+
+template<typename Type>
+Type KickFiltersRT<Type>::median(const Type input)
+{
+	arrMedian[posMedian] = input;
+	if(++posMedian > orderMedian-1) posMedian = 0;
+
+	
+	return KickMath<Type>::calcMedian(orderMedian, arrMedian, tmpArrMedian);
+}
+
+
+template<typename Type>
+Type KickFiltersRT<Type>::median(const Type input, const uint16_t filter_order)
+{
+	if(filter_order > KickFiltersRT_MAX_MEDIAN_FILTER_ORDER) orderMedian = KickFiltersRT_MAX_MEDIAN_FILTER_ORDER;
+	else orderMedian = filter_order;
+
+	
+	arrMedian[posMedian] = input;
+	if(++posMedian > orderMedian-1) posMedian = 0;
+	
+	
+	return KickMath<Type>::calcMedian(orderMedian, arrMedian, tmpArrMedian);
 }
 
 
