@@ -88,8 +88,8 @@
 #include "KickMath.h"
 
 
-const uint16_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 100;
-const uint16_t KickFiltersRT_MAX_MEDIAN_FILTER_ORDER = 100;
+const uint16_t KickFiltersRT_MAX_MOVING_AVERAGE_ORDER = 25;
+const uint16_t KickFiltersRT_MAX_MEDIAN_FILTER_ORDER = 25;
 
 
 template<typename Type>
